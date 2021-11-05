@@ -62,7 +62,7 @@ class CustomDataset(Dataset):
             if len(pass_sen) > 2 * sen_num:
                 pass_sen = pass_sen[0 : 2 * sen_num]
             cur_encodings = torch.FloatTensor(be.encode(pass_sen))
-            if not self.data:
+            if self.data is None:
                 self.start += [0]
                 self.data = cur_encodings
             else:
