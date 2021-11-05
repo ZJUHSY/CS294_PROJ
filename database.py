@@ -8,7 +8,7 @@ from torch.utils.data.dataset import Dataset
 from bert_serving.client import BertClient
 
 CLIENT_BATCH_SIZE = 4096
-SEN_NUM = 64
+#SEN_NUM = 128
 MIN_SEN_LEN = 5
 
 #cut paragraph to sentences
@@ -18,40 +18,63 @@ def cut_para(para):
     para = re.sub('(\…{2})([^”’])', r"\1\n\2", para)
     para = re.sub('([。！？\?][”’])([^，。！？\?])', r'\1\n\2', para)
     para = para.strip()  # remove both sizes' blanks
-    return [sen for sen in para.split("\n") if len(sen) >= MIN_SEN_LEN]
+    return [sen.strip() for sen in para.split("\n") if len(sen.strip()) >= MIN_SEN_LEN]
+
+'''
+begin/end use as label to divide paras@@
+'''
 
 #customized loading data
 class CustomDataset(Dataset):
-    def __init__(self, path, balance):
-        if os.path.isfile(path + ".end"):    
+    def __init__(self, path, sen_num, begin=0, end=None):
+        if end == None and os.path.isfile(path + ".end"):    
             self.data = torch.load(path + ".dat")
             self.label = torch.load(path + ".lab")
             self.start = torch.load(path + ".sta")
             self.end = torch.load(path + ".end")
+            self.sen_num = sen_num
             return
         
 
         be = BertClient()
-        
+
+        self.sen_num = sen_num
         #read data
         inp = open(path, "rb")
         passages = json.load(inp)
-        sens = []
         self.label = []
         self.start = []
         self.end = []
         #pos_num, neg_num = 0, 0
         #pos_index = []
         #neg_index = []
-        for passage in passages:
+        self.data = None
+        count = 0
+        print('begin encoding')
+        for passage in passages[begin : end]:
+            count += 1
+            if count % 20 == 0:
+                print('--------------' + str(count) + '---------------')
+                print('--------------' + str(self.data.shape) + '---------------')
             pass_sen = cut_para(passage["passage"])
-            self.start += [len(sens)]
-            sens += pass_sen
-            self.end += [len(sens)]
-            self.label += [passage["label"]]
+            if len(pass_sen) == 0:
+                pass_sen = ['x']
+            if len(pass_sen) > 2 * sen_num:
+                pass_sen = pass_sen[0 : 2 * sen_num]
+            cur_encodings = torch.FloatTensor(be.encode(pass_sen))
+            if not self.data:
+                self.start += [0]
+                self.data = cur_encodings
+            else:
+                self.start += [self.data.shape[0]]
+                self.data = torch.cat((self.data, cur_encodings), dim = 0)
+            self.end += [self.data.shape[0]]
+            if end == None:
+                self.label += [passage["label"]]
+            else:
+                self.label += [0]
         inp.close()
-        self.data = be.encode(sens)
-        torch.save(torch.FloatTensor(self.data), path + ".dat")
+        torch.save(self.data, path + ".dat")
         torch.save(self.label, path + ".lab")
         torch.save(self.start, path + ".sta")
         torch.save(self.end, path + ".end")
@@ -105,7 +128,6 @@ class CustomDataset(Dataset):
                 self.label.append(1)
                 pos_num += 1
                 last_num += 1
-
             while pos_num > neg_num:
                 self.data[last_num] = np.copy(self.data[neg_index[random.randint(0, len(neg_index) - 1)]])
                 self.label.append(0)
@@ -115,13 +137,15 @@ class CustomDataset(Dataset):
         
 
     def __getitem__(self, index):
+        SEN_NUM = self.sen_num
         if self.end[index] - self.start[index] <= SEN_NUM:
             para = self.data[self.start[index] : self.end[index]]
             length = self.end[index] - self.start[index]
             para = torch.cat((para, torch.zeros((SEN_NUM - (self.end[index] - self.start[index]), 768))), dim=0)
             #print(para.shape)
         else:
-            start = random.randint(0, self.end[index] - SEN_NUM)
+            start = random.randint(self.start[index], self.end[index] - SEN_NUM)
+            #print(start)
             end = start + SEN_NUM
             length = SEN_NUM
             para = self.data[start : end]
