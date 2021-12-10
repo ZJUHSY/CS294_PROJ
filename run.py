@@ -31,8 +31,8 @@ class LSTM_model(nn.Module):
         sens = pack_padded_sequence(sens, lens, batch_first=False, enforce_sorted=True)
         o, (h, c) = self.lstm(sens) # o: <L * B * 2V
         # print(type(o))
-        # print('h:{}'.format(h.shape))
-        # print('c:{}'.format(c.shape))
+        print('h:{}'.format(h.shape))
+        print('c:{}'.format(c.shape))
         o_max = pad_packed_sequence(o, batch_first=False, padding_value=float("-inf"), total_length=None)[0] # L * B * 2V
         # print('o_max:{}'.format(o_max.shape)) #o_max: L * B * 2V
         pooling_layer = nn.MaxPool1d(o_max.shape[0])
