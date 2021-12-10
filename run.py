@@ -20,25 +20,26 @@ class LSTM_model(nn.Module):
     def __init__(self):
         super(LSTM_model, self).__init__()
         self.lstm = nn.LSTM(768, args.hidden_layer, num_layers=2, bidirectional=True)
-        self.pooling = nn.MaxPool1d(args.sen_num)
+        # self.pooling = nn.MaxPool1d(args.sen_num)
 
     def forward(self, sens, lens):
         lens, perm_idx = lens.sort(0, descending=True)
-        #print(perm_idx)
-        #print(lens)
+        # print(perm_idx)
+        # print(lens)
         sens = sens[perm_idx]
         sens = sens.permute(1, 0, 2) # B * L * V -> L * B * V
         sens = pack_padded_sequence(sens, lens, batch_first=False, enforce_sorted=True)
         o, (h, c) = self.lstm(sens) # o: <L * B * 2V
-        #print(type(o))
-        #print('h:{}'.format(h.shape))
-        #print('c:{}'.format(c.shape))
+        # print(type(o))
+        # print('h:{}'.format(h.shape))
+        # print('c:{}'.format(c.shape))
         o_max = pad_packed_sequence(o, batch_first=False, padding_value=float("-inf"), total_length=None)[0] # L * B * 2V
-        #print('o_max:{}'.format(o_max.shape))
-        h_max = self.pooling(o_max.permute(1, 2, 0)).squeeze(2) # B * 2V
-        #print('h_max:{}'.format(h_max.shape))
+        # print('o_max:{}'.format(o_max.shape)) #o_max: L * B * 2V
+        pooling_layer = nn.MaxPool1d(o_max.shape[0])
+        h_max = pooling_layer(o_max.permute(1, 2, 0)).squeeze(2) # B * 2V
+        # print('h_max:{}'.format(h_max.shape))
         o_avg = pad_packed_sequence(o, batch_first=False, padding_value=0, total_length=None)[0] # L * B * 2V   
-        #print('o_avg:{}'.format(o_avg.shape))
+        # print('o_avg:{}'.format(o_avg.shape))
         h_avg = torch.div(torch.sum(o_avg, dim=0).permute(1, 0), lens.to(dtype=torch.float)).permute(1, 0) # B * 2V
 
         h = torch.cat((h_max, h_avg), dim=1) # B * 4V
@@ -95,15 +96,22 @@ if __name__ == "__main__":
     parser.add_argument("-sn", "--sen_num", type=int, default=200)
     parser.add_argument("-tm", "--train_model", type=bool, default=True)
     parser.add_argument("-s", "--step", type=int, default=256)
+    parser.add_argument("-rt", "--ratio", type=float, default=0.5)
     args = parser.parse_args()
 
     #use CUDA to speed up
-    print(args.epoch,args.batch_size,args.train_model)
+    print(args.epoch,args.batch_size,args.train_model, args.ratio)
     use_cuda = torch.cuda.is_available()
 
     #get data
-    train_loader = Data.DataLoader(dataset=CustomDataset(path="train.json", sen_num=args.sen_num), batch_size = args.batch_size, shuffle = True)#, collate_fn=collate_wrapper, pin_memory=True)
-    dev_loader = Data.DataLoader(dataset=CustomDataset(path="dev.json", sen_num=args.sen_num), batch_size = args.batch_size, shuffle = False)#, collate_fn=collate_wrapper, pin_memory=True)
+    train_loader_path, dev_loader_path = "./data/train.json", "./data/dev.json"
+    if args.ratio != 1.0:
+        suffix = '_' + str(args.ratio)
+        train_loader_path += suffix
+
+
+    train_loader = Data.DataLoader(dataset=CustomDataset(path=train_loader_path, sen_num=args.sen_num), batch_size = args.batch_size, shuffle = True)#, collate_fn=collate_wrapper, pin_memory=True)
+    dev_loader = Data.DataLoader(dataset=CustomDataset(path=dev_loader_path, sen_num=args.sen_num), batch_size = args.batch_size, shuffle = False)#, collate_fn=collate_wrapper, pin_memory=True)
 
     #initialize model
     lstm = LSTM_model()
@@ -157,7 +165,7 @@ if __name__ == "__main__":
                     pred = torch.cat((pred, torch.max(score, 1)[1]), dim=0)
                     targ = torch.cat((targ, labels), dim=0)
                     val = torch.cat((val,score),dim = 0)
-                    print(val.shape)
+                    # print(val.shape)
                     #print(val)
             if ite == 0:
                 pred_sum = pred

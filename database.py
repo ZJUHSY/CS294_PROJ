@@ -53,9 +53,9 @@ class CustomDataset(Dataset):
         print('begin encoding')
         for passage in passages[begin : end]:
             count += 1
-            if count % 20 == 0:
-                print('--------------' + str(count) + '---------------')
-                print('--------------' + str(self.data.shape) + '---------------')
+            # if count % 20 == 0:
+                # print('--------------' + str(count) + '---------------')
+                # print('--------------' + str(self.data.shape) + '---------------')
             pass_sen = cut_para(passage["passage"])
             if len(pass_sen) == 0:
                 pass_sen = ['x']
